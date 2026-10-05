@@ -311,3 +311,62 @@ is set to `None`:
     True
     >>> context.document is None
     True
+
+Custom collations
+-----------------
+
+A collation is referenced in an XPath expression through an URI. Custom collations
+are registered on a parser instance (the XPath static context), so they never
+affect the process global locale::
+
+    from elementpath import XPath2Parser, MatchingCollation, CollationUnit
+
+    class MyCollation(MatchingCollation):
+        '''ß and ss are equivalent, hyphens are ignored, case insensitive.'''
+        def iter_units(self, text):
+            start = 0
+            for ch in text:
+                end = start + len(ch)
+                if ch == '-':
+                    yield CollationUnit(start, end, ())          # ignored char
+                elif ch == 'ß':
+                    yield CollationUnit(start, end, ('s', 's'))  # one char, 2 units
+                else:
+                    yield CollationUnit(start, end, (ch.casefold(),))
+                start = end
+
+    parser = XPath2Parser()
+    parser.register_collation('http://example.com/my-collation', MyCollation())
+
+    parser.parse("compare('Strasse', 'Straße', "
+                 "'http://example.com/my-collation')").evaluate()   # 0
+    parser.parse("substring-after('Straße', 'ss', "
+                 "'http://example.com/my-collation')").evaluate()   # 'e'
+
+A :class:`~elementpath.Collation` only has to provide a *sort key* and supports
+``fn:compare`` and every equality based function. To also support the substring
+matching functions (``fn:contains``, ``fn:starts-with``, ``fn:ends-with``,
+``fn:substring-before`` and ``fn:substring-after``) extend
+:class:`~elementpath.MatchingCollation` and decompose every string into
+:class:`~elementpath.CollationUnit` objects: each unit keeps the slice of the
+*original* string it came from together with a tuple of atomic sort-key elements.
+
+An empty key tuple marks an ignored character, a multi-element tuple a one-to-many
+expansion. A match can never split a source unit, so a single ``s`` does not match
+inside the ``ss`` expansion of ``ß``. The slices returned by
+``fn:substring-before``/``fn:substring-after`` are always cut from the original
+string, never from the folded one.
+
+A compare-only collation used with a substring matching function is rejected with
+the ``FOCH0002`` error::
+
+    from elementpath import Collation
+
+    class CompareOnly(Collation):
+        def sort_key(self, text):
+            return tuple(text.casefold())
+
+    parser.register_collation('http://example.com/compare-only', CompareOnly())
+    parser.parse("contains('abc', 'A', "
+                 "'http://example.com/compare-only')").evaluate()
+    # raises ElementPathLocaleError: [err:FOCH0002] ...

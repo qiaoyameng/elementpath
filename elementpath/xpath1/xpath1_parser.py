@@ -21,7 +21,7 @@ from elementpath.exceptions import xpath_error, UnsupportedFeatureError, \
     ElementPathValueError, ElementPathNameError, ElementPathKeyError, MissingContextError
 from elementpath.namespaces import XML_NAMESPACE, XSD_NAMESPACE, XPATH_FUNCTIONS_NAMESPACE
 from elementpath.helpers import upper_camel_case
-from elementpath.collations import UNICODE_CODEPOINT_COLLATION
+from elementpath.collations import Collation, UNICODE_CODEPOINT_COLLATION
 from elementpath.datatypes import QName
 from elementpath.tdop import Parser
 from elementpath.sequence_types import get_function_signatures, match_sequence_type
@@ -105,6 +105,25 @@ class XPath1Parser(Parser[ta.XPathTokenType]):
         if namespaces is not None:
             self.namespaces.update(namespaces)
         self.strict: bool = strict
+        #: Collations registered in the static context, keyed by collation URI
+        self.collations: dict[str, Collation] = {}
+
+    def register_collation(self, uri: str, collation: Collation) -> None:
+        """
+        Registers a custom *collation* under *uri* in this parser's static
+        context. Registration is local to the parser instance and never alters
+        the process global locale.
+        """
+        if not isinstance(uri, str) or not uri:
+            raise ElementPathValueError("collation URI must be a non-empty string")
+        elif not isinstance(collation, Collation):
+            msg = "collation must be an instance of elementpath.Collation"
+            raise ElementPathValueError(msg)
+        self.collations[uri] = collation
+
+    def unregister_collation(self, uri: str) -> None:
+        """Removes a previously registered collation from the static context."""
+        self.collations.pop(uri, None)
 
     def __str__(self) -> str:
         args = []
