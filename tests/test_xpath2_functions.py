@@ -528,6 +528,79 @@ class XPath2FunctionsTest(xpath_test_class.XPathTestCase):
                          '2005/xpath-functions/collation/codepoint")', False)
         self.check_value("ends-with((), ())", True)
 
+    def test_string_functions_with_custom_collation(self):
+        from elementpath.collations import AbstractCollation, CollationElement
+        from tests.test_collations import SharpSTestCollation, ComparisonOnlyTestCollation
+
+        de_uri = 'http://example.com/collation/sharp-s-test'
+        parser = self.parser.__class__(collations={de_uri: SharpSTestCollation()})
+
+        def value(expression):
+            return parser.parse(expression).evaluate()
+
+        # comparison
+        self.assertEqual(value("compare('Straße', 'strasse', '%s')" % de_uri), 0)
+        self.assertEqual(value("compare('Stra·ße', 'STRASSE', '%s')" % de_uri), 0)
+
+        # matching functions
+        self.assertIs(value("contains('die Straße', 'Strasse', '%s')" % de_uri), True)
+        self.assertIs(value("contains('die Str·aße', 'x', '%s')" % de_uri), False)
+        self.assertIs(value("starts-with('·straße', 'STR', '%s')" % de_uri), True)
+        self.assertIs(value("ends-with('Straße·', 'ASSE', '%s')" % de_uri), True)
+
+        # substring functions return slices of the ORIGINAL string
+        self.assertEqual(value("substring-before('die Straße', 'strasse', '%s')"
+                               % de_uri), 'die ')
+        self.assertEqual(value("substring-after('die Straße', 'die', '%s')"
+                               % de_uri), ' Straße')
+        self.assertEqual(value("substring-before('a·ßb', 'ss', '%s')" % de_uri),
+                         'a·')
+        self.assertEqual(value("substring-after('a·ßb', 'ss', '%s')" % de_uri), 'b')
+        self.assertEqual(value("substring-before('abc', 'zz', '%s')" % de_uri), '')
+        self.assertEqual(value("substring-after('abc', 'zz', '%s')" % de_uri), '')
+
+        # a registered custom collation used as default collation
+        default_parser = self.parser.__class__(
+            default_collation=de_uri, collations={de_uri: SharpSTestCollation()}
+        )
+        self.assertEqual(
+            default_parser.parse("compare('ß', 'ss')").evaluate(), 0
+        )
+        self.assertIs(
+            default_parser.parse("contains('Straße', 'strasse')").evaluate(), True
+        )
+
+        # comparison-only collation: matching functions are rejected
+        cmp_uri = 'http://example.com/collation/compare-only'
+        cmp_parser = self.parser.__class__(
+            collations={cmp_uri: ComparisonOnlyTestCollation()}
+        )
+        self.assertEqual(cmp_parser.parse(
+            "compare('a', 'a', '%s')" % cmp_uri).evaluate(), 0)
+        for name in ('contains', 'starts-with', 'ends-with',
+                     'substring-before', 'substring-after'):
+            with self.assertRaises(ElementPathError) as err:
+                cmp_parser.parse("%s('abc', 'b', '%s')" % (name, cmp_uri)).evaluate()
+            self.assertIn('FOCH0002', str(err.exception))
+
+        # the default codepoint collation is unchanged
+        self.check_value(
+            "compare('Straße', 'Strassen', "
+            "'http://www.w3.org/2005/xpath-functions/collation/codepoint')", 1
+        )
+        self.check_value(
+            "contains('Straße', 'ss', "
+            "'http://www.w3.org/2005/xpath-functions/collation/codepoint')", False
+        )
+        self.check_value(
+            "substring-before('Straße', 'ss', "
+            "'http://www.w3.org/2005/xpath-functions/collation/codepoint')", ''
+        )
+        self.check_value(
+            "substring-after('Straße', 'x', "
+            "'http://www.w3.org/2005/xpath-functions/collation/codepoint')", ''
+        )
+
     def test_replace_function(self):
         self.check_value('fn:replace("abracadabra", "bra", "*")', "a*cada*")
         self.check_value('fn:replace("abracadabra", "a.*a", "*")', "*")

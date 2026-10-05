@@ -25,7 +25,8 @@ from elementpath.namespaces import XML_NAMESPACE, XSD_NAMESPACE, XPATH_FUNCTIONS
     XQT_ERRORS_NAMESPACE, XSD_NOTATION, XSD_ANY_ATOMIC_TYPE
 from elementpath.namespaces import get_prefixed_name
 from elementpath.datatypes import QName, builtin_atomic_types
-from elementpath.collations import UNICODE_COLLATION_BASE_URI, UNICODE_CODEPOINT_COLLATION
+from elementpath.collations import UNICODE_COLLATION_BASE_URI, UNICODE_CODEPOINT_COLLATION, \
+    AbstractCollation
 from elementpath.xpath_tokens import XPathToken, ProxyToken, XPathFunction, \
     XPathConstructor, SchemaConstructor, ExternalFunction
 from elementpath.sequence_types import get_function_signatures, is_sequence_type, \
@@ -63,6 +64,9 @@ class XPath2Parser(XPath1Parser):
     resolution of relative URIs.
     :param default_collation: the default string collation to use. If not set the \
     environment's default locale setting is used.
+    :param collations: a dictionary mapping collation URIs to application-provided \
+    :class:`~elementpath.collations.AbstractCollation` objects. The registration is \
+    local to this parser/static context and does not touch the process locale.
     :param document_types: statically known documents, that is a dictionary from \
     absolute URIs onto types. Used for type check when calling the *fn:doc* function \
     with a sequence of URIs. The default type of a document is 'document-node()'.
@@ -111,7 +115,8 @@ class XPath2Parser(XPath1Parser):
                  variable_types: dict[str, str] | None = None,
                  document_types: dict[str, str] | None = None,
                  collection_types: ta.NamespacesType | None = None,
-                 default_collection_type: str = 'node()*') -> None:
+                 default_collection_type: str = 'node()*',
+                 collations: dict[str, AbstractCollation] | None = None) -> None:
 
         super(XPath2Parser, self).__init__(namespaces, strict)
         self.compatibility_mode = compatibility_mode
@@ -127,6 +132,11 @@ class XPath2Parser(XPath1Parser):
                 language_code, encoding = _locale.split('.')
                 if encoding.lower() == 'utf-8':
                     self.default_collation = f'{UNICODE_COLLATION_BASE_URI}?lang={language_code}'
+
+        self.collations: dict[str, AbstractCollation] = {}
+        if collations:
+            for uri, collation in collations.items():
+                self.register_collation(uri, collation)
 
         self._xsd_version = xsd_version if xsd_version is not None else '1.0'
 
@@ -170,12 +180,32 @@ class XPath2Parser(XPath1Parser):
                                         'default_collection_type argument')
         self.default_collection_type = default_collection_type
 
+    def register_collation(self, uri: str, collation: AbstractCollation) -> None:
+        """
+        Registers an application-defined *collation* under *uri* on this
+        parser/static context. The registration is local: it never changes
+        the process global locale.
+        """
+        if not isinstance(uri, str) or not uri:
+            raise ElementPathValueError("collation URI must be a non-empty string")
+        elif not isinstance(collation, AbstractCollation):
+            raise ElementPathTypeError(
+                "collation must be an AbstractCollation instance"
+            )
+        self.collations[uri] = collation
+
+    def unregister_collation(self, uri: str) -> None:
+        """Removes a previously registered application-defined collation."""
+        self.collations.pop(uri, None)
+
     def __str__(self) -> str:
         args = []
         if self.compatibility_mode:
             args.append('compatibility_mode=True')
         if self.default_collation != UNICODE_CODEPOINT_COLLATION:
             args.append(f'default_collation={self.default_collation!r}')
+        if self.collations:
+            args.append(f'collations={self.collations!r}')
         if self.function_namespace != XPATH_FUNCTIONS_NAMESPACE:
             args.append(f'function_namespace={self.function_namespace!r}')
         if self._xsd_version != '1.0':

@@ -1159,14 +1159,10 @@ def evaluate__substring_functions(self: XPathFunction, context: ta.ContextType =
         collation = self.get_argument(context, 2, required=True, cls=str)
 
     with CollationManager(collation, self) as manager:
-        index = manager.find(arg1, arg2)
-
-    if index < 0:
-        return ''
-    if self.symbol == 'substring-before':
-        return arg1[:index]
-    else:
-        return arg1[index + len(arg2):]
+        if self.symbol == 'substring-before':
+            return manager.substring_before(arg1, arg2)
+        else:
+            return manager.substring_after(arg1, arg2)
 
 
 ###

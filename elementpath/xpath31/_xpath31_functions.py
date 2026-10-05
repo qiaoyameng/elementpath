@@ -1088,7 +1088,7 @@ def evaluate__collation_key(self: XPathFunction, context: ta.ContextType = None)
         with CollationManager(collation, self) as manager:
             base64_key = Base64Binary.encoder(manager.strxfrm(key).encode())
             return Base64Binary(base64_key, ordered=True)
-    except locale.Error:
+    except (locale.Error, AttributeError, TypeError):
         raise self.error('FOCH0004')
 
 
