@@ -15,7 +15,7 @@ from abc import ABCMeta
 import locale
 from collections.abc import Callable, MutableMapping
 from urllib.parse import urlparse
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar, cast, TYPE_CHECKING
 
 import elementpath.aliases as ta
 
@@ -32,6 +32,9 @@ from elementpath.sequence_types import get_function_signatures, is_sequence_type
     match_sequence_type
 from elementpath.schema_proxy import AbstractSchemaProxy
 from elementpath.xpath1 import XPath1Parser
+
+if TYPE_CHECKING:
+    from elementpath.static_analysis import StaticAnalysisResult
 
 
 class XPath2Parser(XPath1Parser):
@@ -439,6 +442,25 @@ class XPath2Parser(XPath1Parser):
             if not match_sequence_type(value, sequence_type, self):
                 message = "Unmatched sequence type for variable {!r}".format(varname)
                 raise xpath_error('XPDY0050', message)
+
+    def check_static_types(self, source: str,
+                           context_item_type: str = 'item()') -> 'StaticAnalysisResult':
+        """
+        Performs a static type analysis of an XPath expression, using the static
+        context of the parser instance (in-scope variable types, registered
+        function signatures and statically known documents). The expression is
+        not evaluated and user-defined functions are never executed, so the
+        analysis has no side effects.
+
+        :param source: the XPath expression source string.
+        :param context_item_type: the sequence type of the context item, \
+        'item()' for default.
+        :return: a `StaticAnalysisResult` instance, reporting the provable \
+        type errors with their position in the source and the inferred \
+        sequence type of the expression (`None` if it cannot be determined).
+        """
+        from elementpath.static_analysis import analyze_expression
+        return analyze_expression(source, self, context_item_type)
 
 
 ##

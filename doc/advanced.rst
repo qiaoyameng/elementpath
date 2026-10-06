@@ -63,6 +63,73 @@ related with operators and function arguments:
     elementpath.exceptions.ElementPathTypeError: '+' operator at line 1, column 3: [err:XPTY0004] ...
 
 
+Static type analysis
+====================
+
+The module :mod:`elementpath.static_analysis` provides an optional static checker
+that infers the sequence type of an XPath expression without evaluating it, in order
+to detect type errors (like passing a node sequence to a function that accepts only
+numbers) before the expression is saved or executed.
+
+The analysis propagates static types (item type and occurrence) along the token tree,
+using the static context of the parser instance (in-scope variable types, registered
+function signatures and statically known documents) plus an optional context item type.
+The result reports the provable type errors, each one carrying the position in the
+source expression, and the inferred sequence type of the expression:
+
+.. doctest::
+
+    >>> from elementpath import XPath2Parser
+    >>> parser = XPath2Parser(variable_types={'s': 'xs:string'})
+    >>> result = parser.check_static_types('fn:abs($s)')
+    >>> result.ok
+    False
+    >>> for error in result.errors:
+    ...     print(error)
+    'fn:abs' function at line 1, column 4: [err:XPTY0004] argument 1 of type xs:string is not appropriate for the required type xs:numeric?
+    >>> result.sequence_type
+    'xs:numeric?'
+
+When a subexpression cannot be statically typed its type is *unknown*: unknown types
+never generate errors, because a problem is reported only when it can be proved for
+every possible runtime value:
+
+.. doctest::
+
+    >>> result = parser.check_static_types('$u + 1')
+    >>> result.ok
+    True
+    >>> result.sequence_type is None
+    True
+
+Functions are never executed to guess their result types, so the analysis has no
+side effects: it doesn't consume variable values and doesn't load external documents.
+
+Supported constructs in this version:
+
+- literals, variable references, context item and parenthesis expressions;
+- path expressions ('/', '//'), path steps (names, wildcards, kind tests, axes,
+  '@', '..') and predicates;
+- arithmetic operators ('+', '-', '\*', 'div', 'idiv', 'mod') with XSD numeric
+  promotion (xs:integer -> xs:decimal -> xs:float -> xs:double);
+- value and general comparisons and the 'to' operator;
+- sequence concatenation (',') and set operators ('union', '|', 'intersect', 'except');
+- conditional expressions ('if'), with merging of branch types;
+- 'for', 'let', 'some' and 'every' expressions, with static typing of the bound
+  variables;
+- type expressions ('instance of', 'treat as', 'cast as', 'castable as'), including
+  a check of impossible casts between XSD type families;
+- calls to functions and constructors that declare a signature with sequence types
+  (all the builtin functions and the external functions registered with
+  *sequence_types*), checked with the function conversion rules (atomization and
+  type promotions); the *fn:doc* result is refined using the statically known
+  documents of the parser.
+
+Other constructs (e.g. maps, arrays, arrow and lookup operators, dynamic function
+calls) are traversed for finding errors in their subexpressions but their result
+type is unknown.
+
+
 Dynamic evaluation
 ==================
 

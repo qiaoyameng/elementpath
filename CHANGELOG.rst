@@ -2,6 +2,13 @@
 CHANGELOG
 *********
 
+`v5.2.0`_ (unreleased)
+======================
+* Add optional static type analysis of XPath expressions with the module
+  *elementpath.static_analysis* and the parser method *check_static_types*:
+  propagates sequence types and occurrences along the token tree and reports
+  provable type errors with their position in the source expression
+
 `v5.1.4`_ (2026-08-08)
 ======================
 * Add *allow_environment* and *allow_external_resources* arguments to XPath30Parser
