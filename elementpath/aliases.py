@@ -8,7 +8,7 @@
 # @author Davide Brunato <brunato@sissa.it>
 #
 """Type annotation aliases for elementpath."""
-from collections.abc import MutableMapping, Iterator
+from collections.abc import Callable, MutableMapping, Iterator
 from decimal import Decimal
 from typing import Any, Optional, NoReturn, TYPE_CHECKING, TypeVar, Union
 
@@ -118,6 +118,7 @@ ClassCheckType = Union[type[Any], tuple[type[Any], ...]]
 # Context arguments
 ContextType = Union['XPathContext', 'XPathSchemaContext', None]
 RootArgType = Union['DocumentType', 'ElementType', 'SchemaElemType', RootNodeType]
+LoaderType = Callable[[str], RootArgType]
 ItemArgType = Union[ItemType, 'ElementProtocol', 'DocumentProtocol']
 SchemaProxyType = Union['AbstractSchemaProxy']
 

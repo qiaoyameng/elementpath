@@ -83,6 +83,25 @@ XPath contexts
 .. autoclass:: elementpath.XPathSchemaContext
 
 
+Resource resolution
+===================
+
+External resources accessed by fn:doc, fn:doc-available and fn:collection can
+be resolved through an explicit resource context, that restricts the access to
+the registered URIs and to the caller-provided loader callable.
+
+.. autoclass:: elementpath.ResourceContext
+
+    .. automethod:: resolve_uri
+    .. automethod:: add_document
+    .. automethod:: add_collection
+    .. automethod:: set_default_collection
+    .. automethod:: get_document
+    .. automethod:: get_collection
+
+.. autoexception:: elementpath.ResourceError
+
+
 XML Schema proxy
 ================
 
@@ -271,4 +290,3 @@ Duration types
 .. autoclass:: elementpath.datatypes.Duration
 .. autoclass:: elementpath.datatypes.YearMonthDuration
 .. autoclass:: elementpath.datatypes.DayTimeDuration
-
