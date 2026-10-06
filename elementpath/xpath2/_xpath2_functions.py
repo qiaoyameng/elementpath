@@ -24,7 +24,7 @@ from urllib.parse import urlsplit, quote as urllib_quote
 
 import elementpath.aliases as ta
 
-from elementpath.exceptions import ElementPathValueError
+from elementpath.exceptions import ElementPathError, ElementPathValueError
 from elementpath.namespaces import XML_ID, XML_LANG, XML_NAMESPACE
 from elementpath.helpers import Patterns, is_idrefs, is_xml_codepoint, round_number
 from elementpath.datatypes import DateTime10, DateTime, Date10, Date, \
@@ -1648,24 +1648,35 @@ def evaluate__doc_functions(self: XPathFunction, context: ta.ContextType = None)
             raise self.error('FODC0005')
         return False
 
-    try:
-        uri = self.get_absolute_uri(uri)
-    except ElementPathValueError as err:
-        if self.symbol == 'doc':
-            raise self.error('FODC0002', err.message) from None
-        return False
-
-    try:
-        doc = context.documents[uri]  # type: ignore[index]
-    except (KeyError, TypeError):
-        if self.symbol == 'doc':
-            if is_local_dir_url(uri):
-                raise self.error('FODC0005', 'document URI is a directory')
-            raise self.error('FODC0002')
-        return False
+    if context.resources is not None:
+        # Explicit resource resolution context: only registered or
+        # loadable URIs are available, no file or network access.
+        try:
+            uri = context.resources.resolve_uri(uri, self.parser.base_uri)
+            doc = context.resources.get_document(uri)
+        except ElementPathError as err:
+            if self.symbol == 'doc':
+                raise self.error(err.code or 'FODC0002', err.message) from None
+            return False
     else:
-        if doc is None:
-            raise self.error('FODC0002')
+        try:
+            uri = self.get_absolute_uri(uri)
+        except ElementPathValueError as err:
+            if self.symbol == 'doc':
+                raise self.error('FODC0002', err.message) from None
+            return False
+
+        try:
+            doc = context.documents[uri]  # type: ignore[index]
+        except (KeyError, TypeError):
+            if self.symbol == 'doc':
+                if is_local_dir_url(uri):
+                    raise self.error('FODC0005', 'document URI is a directory')
+                raise self.error('FODC0002')
+            return False
+        else:
+            if doc is None:
+                raise self.error('FODC0002')
 
     try:
         sequence_type = self.parser.document_types[uri]  # type: ignore[index]
@@ -1690,6 +1701,31 @@ def evaluate__collection(self: XPathFunction, context: ta.ContextType = None) \
         raise self.missing_context()
     elif isinstance(context, XPathSchemaContext):
         return []
+    elif context.resources is not None:
+        # Explicit resource resolution context: only registered
+        # collections are available, no file or network access.
+        if not self or uri is None:
+            try:
+                collection = context.resources.get_collection(
+                    base_uri=self.parser.base_uri
+                )
+            except ElementPathError as err:
+                raise self.error(err.code or 'FODC0002', err.message) from None
+
+            sequence_type = self.parser.default_collection_type
+        else:
+            uri = context.resources.resolve_uri(uri, self.parser.base_uri)
+            try:
+                collection = context.resources.get_collection(
+                    uri, self.parser.base_uri
+                )
+            except ElementPathError as err:
+                raise self.error(err.code or 'FODC0002', err.message) from None
+
+            try:
+                sequence_type = self.parser.collection_types[uri]  # type: ignore[index]
+            except (KeyError, TypeError):
+                return collection
     elif not self or uri is None:
         if context.default_collection is None:
             raise self.error('FODC0002', 'no default collection has been defined')

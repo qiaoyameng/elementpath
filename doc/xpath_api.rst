@@ -83,6 +83,13 @@ XPath contexts
 .. autoclass:: elementpath.XPathSchemaContext
 
 
+Resource resolvers
+==================
+
+.. autoclass:: elementpath.ResourceResolver
+    :members:
+
+
 XML Schema proxy
 ================
 
@@ -271,4 +278,3 @@ Duration types
 .. autoclass:: elementpath.datatypes.Duration
 .. autoclass:: elementpath.datatypes.YearMonthDuration
 .. autoclass:: elementpath.datatypes.DayTimeDuration
-

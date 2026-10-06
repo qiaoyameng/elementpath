@@ -60,6 +60,10 @@ class XMLResourceForbidden(ElementPathError):
     """Raised when the parsing of an XML resource is forbidden for safety reasons."""
 
 
+class ElementPathResourceError(ElementPathError):
+    """Raised when a resource cannot be resolved or loaded by a resource resolver."""
+
+
 class ElementPathKeyError(ElementPathError, KeyError):
     pass
 

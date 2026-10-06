@@ -26,6 +26,7 @@ from elementpath.etree import is_etree_element, is_etree_element_instance, is_et
 from elementpath.xpath_nodes import XPathNode, AttributeNode, NamespaceNode, \
     CommentNode, ProcessingInstructionNode, ElementNode, DocumentNode
 from elementpath.tree_builders import get_node_tree
+from elementpath.resource_resolver import ResourceResolver
 
 __all__ = ['XPathContext', 'XPathSchemaContext']
 
@@ -69,6 +70,10 @@ class XPathContext:
     strings onto sequences of nodes. Used by the XPath 2.0+ function fn:collection.
     :param default_collection: This is the sequence of nodes used when fn:collection \
     is called with no arguments.
+    :param resources: an optional ResourceResolver instance that explicitly \
+    maps the documents and the collections available to fn:doc, fn:doc-available \
+    and fn:collection. When provided it takes precedence over the *documents*, \
+    *collections* and *default_collection* arguments.
     :param text_resources: Available text resources. This is a mapping of absolute URI strings \
     onto text resources. Used by XPath 3.0+ function fn:unparsed-text/fn:unparsed-text-lines.
     :param resource_collections: Available URI collections. This is a mapping of absolute \
@@ -89,6 +94,7 @@ class XPathContext:
     documents: dict[str, DocumentNode] | None = None
     collections: dict[str, list[XPathNode]] | None = None
     default_collection: list[XPathNode] | None = None
+    resources: ResourceResolver | None = None
 
     __slots__ = ('document', 'root', 'item', 'namespaces', 'size',
                  'position', 'variables', 'axis', '__dict__')
@@ -109,6 +115,7 @@ class XPathContext:
                  documents: dict[str, ta.RootArgType] | None = None,
                  collections: dict[str, ta.CollectionArgType] | None = None,
                  default_collection: ta.CollectionArgType = None,
+                 resources: ResourceResolver | None = None,
                  text_resources: dict[str, str] | None = None,
                  resource_collections: dict[str, list[str]] | None = None,
                  default_resource_collection: str | None = None,
@@ -175,6 +182,8 @@ class XPathContext:
 
         if default_collection is not None:
             self.default_collection = self.get_collection(default_collection)
+
+        self.resources = resources
 
         self.text_resources = text_resources if text_resources is not None else {}
         self.resource_collections = resource_collections
