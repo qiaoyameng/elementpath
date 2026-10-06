@@ -46,6 +46,9 @@ class XPath2Parser(XPath1Parser):
     :param namespaces: a dictionary with mapping from namespace prefixes into URIs.
     :param variable_types: a dictionary with the static context's in-scope variable \
     types. It defines the associations between variables and static types.
+    :param static_type_check: if `True`, performs an optional AST-based static type \
+    check after parsing, without evaluating the expression or loading documents.
+    :param context_item_type: optional sequence type of the static context item.
     :param strict: if strict mode is `False` the parser enables parsing of QNames, \
     like the ElementPath library. Default is `True`.
     :param compatibility_mode: if set to `True` the parser instance works with \
@@ -109,6 +112,8 @@ class XPath2Parser(XPath1Parser):
                  schema: AbstractSchemaProxy | None = None,
                  base_uri: str | None = None,
                  variable_types: dict[str, str] | None = None,
+                 static_type_check: bool = False,
+                 context_item_type: str | None = None,
                  document_types: dict[str, str] | None = None,
                  collection_types: ta.NamespacesType | None = None,
                  default_collection_type: str = 'node()*') -> None:
@@ -153,6 +158,15 @@ class XPath2Parser(XPath1Parser):
         else:
             raise ElementPathValueError('invalid sequence type for in-scope variable types')
 
+        self.static_type_check = static_type_check
+
+        if context_item_type is None:
+            self.context_item_type = None
+        elif is_sequence_type(context_item_type, self):
+            self.context_item_type = context_item_type
+        else:
+            raise ElementPathValueError('invalid sequence type for context item type')
+
         self.base_uri = None if base_uri is None else urlparse(base_uri).geturl()
 
         if document_types:
@@ -186,6 +200,10 @@ class XPath2Parser(XPath1Parser):
             args.append(f'base_uri={self.base_uri!r}')
         if self.variable_types:
             args.append(f'variable_types={self.variable_types!r}')
+        if self.static_type_check:
+            args.append('static_type_check=True')
+        if self.context_item_type is not None:
+            args.append(f'context_item_type={self.context_item_type!r}')
         if self.document_types:
             args.append(f'document_types={self.document_types!r}')
         if self.collection_types:

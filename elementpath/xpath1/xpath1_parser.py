@@ -70,6 +70,8 @@ class XPath1Parser(Parser[ta.XPathTokenType]):
     # Class attributes for compatibility with XPath 2.0+
     schema: Optional[AbstractSchemaProxy] = None
     variable_types: Optional[dict[str, str]] = None
+    static_type_check: bool = False
+    context_item_type: Optional[str] = None
     document_types: Optional[dict[str, str]] = None
     collection_types: Optional[ta.NamespacesType] = None
     default_collection_type: str = 'node()*'
@@ -240,6 +242,15 @@ class XPath1Parser(Parser[ta.XPathTokenType]):
         root_token = super().parse(source)
         if root_token.label in ('sequence type', 'function test'):
             raise root_token.error('XPST0003', "not allowed in XPath expression")
+
+        if getattr(self, 'static_type_check', False):
+            from elementpath.static_analysis import static_check
+            result = static_check(
+                root_token, self, getattr(self, 'context_item_type', None),
+                raise_on_error=True
+            )
+            root_token.static_analysis = result
+            return root_token
 
         try:
             root_token.evaluate()  # Static context evaluation
