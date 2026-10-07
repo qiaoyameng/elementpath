@@ -13,6 +13,10 @@ XPath selectors
 
 .. autofunction:: elementpath.iter_select
 
+.. autofunction:: elementpath.iter_select_events
+
+.. autofunction:: elementpath.iterparse_select
+
 .. autoclass:: elementpath.Selector
 
     .. autoattribute:: namespaces

@@ -8,11 +8,13 @@
 #
 # @author Davide Brunato <brunato@sissa.it>
 #
+import io
 import unittest
 import warnings
 import xml.etree.ElementTree as ElementTree
 
-from elementpath import select, iter_select, Selector, XPath2Parser
+from elementpath import select, iter_select, iter_select_events, iterparse_select, \
+    Selector, XPath2Parser, UnsupportedFeatureError
 
 try:
     import lxml.etree as lxml_etree
@@ -121,6 +123,191 @@ class XPathSelectorsTest(unittest.TestCase):
 
         self.assertEqual(select(root1, query, fragment=False), root1[0][:])
         self.assertEqual(select(root2, query, fragment=False), root2[0][:])
+
+
+class StreamEvents:
+    def __init__(self, events):
+        self.events = iter(events)
+        self.pulled = 0
+        self.closed = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        event = next(self.events)
+        self.pulled += 1
+        return event
+
+    def close(self):
+        self.closed = True
+
+
+class StreamingSelectorTest(unittest.TestCase):
+    XML = (
+        b'<root>'
+        b'<item id="1" kind="a"><nested id="1.1"/></item>'
+        b'<garbage><deep/></garbage>'
+        b'<item id="2" kind="b"/>'
+        b'<item id="3" kind="a"/>'
+        b'</root>'
+    )
+
+    def events(self, xml=None):
+        return ElementTree.iterparse(
+            io.BytesIO(xml or self.XML), events=('start', 'end')
+        )
+
+    def test_matches_document_select(self):
+        document = ElementTree.parse(io.BytesIO(self.XML))
+        paths = [
+            '/root/item',
+            '//item',
+            '/root/item[@kind="a"]',
+            '/root/item[@kind="a"][2]',
+            '//nested',
+            '/root/item[2]',
+        ]
+        for path in paths:
+            with self.subTest(path=path):
+                results = list(iter_select_events(self.events(), path))
+                expected = select(document, path)
+                self.assertEqual(
+                    [(element.tag, element.attrib) for element in results],
+                    [(element.tag, element.attrib) for element in expected],
+                )
+
+    def test_first_match_returns_before_document_ends(self):
+        root = ElementTree.Element('root')
+        item = ElementTree.SubElement(root, 'item', {'id': '1'})
+        nested = ElementTree.SubElement(item, 'nested')
+        tail = ElementTree.SubElement(root, 'tail')
+
+        def build_events():
+            yield ('start', root)
+            yield ('start', item)
+            yield ('start', nested)
+            yield ('end', nested)
+            yield ('end', item)
+            yield ('start', tail)
+            yield ('end', tail)
+            yield ('end', root)
+
+        events = StreamEvents(build_events())
+        selector = iter_select_events(events, '/root/item')
+        match = next(selector)
+
+        self.assertIs(match, item)
+        self.assertEqual([child.tag for child in match], ['nested'])
+        self.assertEqual(events.pulled, 5)
+        selector.close()
+        self.assertTrue(events.closed)
+
+    def test_nested_matches_remain_complete_and_document_ordered(self):
+        xml = (
+            b'<root><item id="outer">'
+            b'<item id="middle"><item id="inner"/></item>'
+            b'</item></root>'
+        )
+        results = list(iter_select_events(self.events(xml), '//item'))
+
+        self.assertEqual([item.get('id') for item in results],
+                         ['outer', 'middle', 'inner'])
+        self.assertEqual(results[0][0].get('id'), 'middle')
+        self.assertEqual(results[0][0][0].get('id'), 'inner')
+        self.assertIs(results[1][0], results[2])
+
+    def test_completed_nonmatches_are_released_but_active_ancestor_is_kept(self):
+        root = ElementTree.Element('root')
+
+        def events():
+            yield ('start', root)
+            garbage = ElementTree.SubElement(root, 'garbage')
+            yield ('start', garbage)
+            deep = ElementTree.SubElement(garbage, 'deep')
+            yield ('start', deep)
+            yield ('end', deep)
+            yield ('end', garbage)
+            target = ElementTree.SubElement(root, 'target')
+            yield ('start', target)
+            payload = ElementTree.SubElement(target, 'payload')
+            yield ('start', payload)
+            yield ('end', payload)
+            yield ('end', target)
+            tail = ElementTree.SubElement(root, 'tail')
+            yield ('start', tail)
+            yield ('end', tail)
+            yield ('end', root)
+
+        selector = iter_select_events(events(), '/root/target')
+        match = next(selector)
+
+        self.assertEqual(match.tag, 'target')
+        self.assertEqual(len(root), 1)
+        self.assertIs(root[0], match)
+        self.assertEqual([child.tag for child in match], ['payload'])
+        selector.close()
+
+    def test_namespace_and_numeric_attribute_predicates(self):
+        xml = b'<root xmlns="urn:test"><item n="2"/><item n="10"/><item n="x"/></root>'
+        events = ElementTree.iterparse(io.BytesIO(xml), events=('start', 'end'))
+        results = list(iter_select_events(
+            events, '/t:root/t:item[@n > 1]',
+            namespaces={'t': 'urn:test'},
+        ))
+        self.assertEqual([item.attrib['n'] for item in results], ['2', '10'])
+
+        wildcard_events = ElementTree.iterparse(
+            io.BytesIO(b'<r xmlns="urn:test"><a/><b/></r>'),
+            events=('start', 'end'),
+        )
+        wildcard_results = list(iter_select_events(
+            wildcard_events, '//*:a', namespaces={'t': 'urn:test'}
+        ))
+        self.assertEqual([item.tag for item in wildcard_results], ['{urn:test}a'])
+
+    def test_unsupported_expressions_are_rejected_without_reading_events(self):
+        class UnreadEvents:
+            def __iter__(self):
+                raise AssertionError('events must not be consumed')
+
+        for path in ('a/following-sibling::b', 'preceding::b',
+                     'a[last()]', 'a/@id', 'a | b', '.'):
+            with self.subTest(path=path):
+                with self.assertRaises(UnsupportedFeatureError):
+                    iter_select_events(UnreadEvents(), path)
+
+    def test_iterparse_select_stops_on_consumer_exit(self):
+        stream = io.BytesIO(b'<root><target><x/></target><tail/></root>')
+        selector = iterparse_select(stream, '/root/target')
+        match = next(selector)
+
+        self.assertEqual(match.tag, 'target')
+        selector.close()
+
+    def test_event_source_is_not_pulled_after_consumer_exit(self):
+        root = ElementTree.Element('root')
+        target = ElementTree.SubElement(root, 'target')
+        nested = ElementTree.SubElement(target, 'nested')
+        tail = ElementTree.SubElement(root, 'tail')
+
+        def build_events():
+            yield ('start', root)
+            yield ('start', target)
+            yield ('start', nested)
+            yield ('end', nested)
+            yield ('end', target)
+            yield ('start', tail)
+            yield ('end', tail)
+            yield ('end', root)
+
+        events = StreamEvents(build_events())
+        selector = iter_select_events(events, '/root/target')
+        self.assertIs(next(selector), target)
+        self.assertEqual(events.pulled, 5)
+        selector.close()
+        self.assertTrue(events.closed)
+        self.assertEqual(events.pulled, 5)
 
 
 @unittest.skipIf(lxml_etree is None, "The lxml library is not installed")
