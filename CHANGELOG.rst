@@ -2,6 +2,11 @@
 CHANGELOG
 *********
 
+* Add `StreamingSelector` and `iter_select_stream()` for streaming XPath
+  selection on ElementTree iterparse-style events, without building the
+  full document tree (forward element paths, attribute comparisons and
+  online-decidable position conditions only)
+
 `v5.1.4`_ (2026-08-08)
 ======================
 * Add *allow_environment* and *allow_external_resources* arguments to XPath30Parser
